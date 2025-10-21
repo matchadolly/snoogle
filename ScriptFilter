@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+
+import os, sys, json, re, urllib.parse
+
+BUNDLE_ID = "com.matchadolly.Snoogle"
+URLS_FILE_NAME = "urls.txt"
+
+def get_data_dir():
+	data_dir = os.getenv("alfred_workflow_data")
+	if not data_dir:
+		data_dir = os.path.join(os.path.expanduser("~"), ".alfred-workflow-data", BUNDLE_ID)
+	os.makedirs(data_dir, exist_ok=True)
+	return data_dir
+
+def urls_file_path():
+	return os.path.join(get_data_dir(), URLS_FILE_NAME)
+
+DEFAULT_FILE = """---- Instructions ----
+
+Each profile group begins with the headline "Profile ID • Profile display name".
+Separate different profile groups with blank lines.
+
+The profile ID should correspond to the ID of your desired Chrome profile.
+To find the profile ID, follow this guide: https://ujesh.com/find-chrome-profile-number-windows-mac-linux/
+
+URL entires are placed under the headline, with one URL entry per line.
+Entries consist of the title, a colon with a space, and the URL.
+
+URL entries in the "Shared" group will open in the default browser.
+
+---------------------
+
+Shared
+google: https://www.google.com/
+
+Profile 1 • Example
+google: https://www.google.com/
+"""
+
+def ensure_file_exists():
+	p = urls_file_path()
+	if not os.path.exists(p):
+		with open(p, "w", encoding="utf-8") as f:
+			f.write(DEFAULT_FILE)
+	return p
+
+def parse_urls(text):
+	INSTRUCTION_MARKERS = (
+		"---- Instructions ----",
+		"---------------------"
+	)
+	entries = []
+	current_profile_id = None
+	current_profile_name = None
+	for raw in text.splitlines():
+		line = raw.strip()
+		if any(line.lower().startswith(m.lower()) for m in INSTRUCTION_MARKERS):
+			current_profile_id = None
+			current_profile_name = None
+			continue
+		if not line:
+			continue
+		# 🎀 Profile header
+		if "•" in line and ":" not in line:
+			parts = [p.strip() for p in line.split("•", 1)]
+			if len(parts) == 2:
+				current_profile_id = parts[0]
+				current_profile_name = parts[1]
+			continue
+		# 🎀 URL entry
+		if current_profile_id and ":" in line:
+			title_part, url_part = line.split(":", 1)
+			title = title_part.strip()
+			url = url_part.strip()
+			if title and url and (url.startswith("http://") or url.startswith("https://")):
+				is_shared = current_profile_id.strip().lower() == "shared"
+				entries.append({
+					"title": title,
+					"url": url,
+					"profile_id": None if is_shared else current_profile_id,
+					"profile_name": current_profile_name or "",
+					"is_shared": is_shared
+				})
+	return entries
+
+def load_entries():
+	p = ensure_file_exists()
+	try:
+		with open(p, "r", encoding="utf-8") as f:
+			content = f.read()
+	except Exception:
+		content = ""
+	return parse_urls(content)
+
+def item_search_google(query=None):
+	if query:
+		q = urllib.parse.quote_plus(query)
+		url = f"https://www.google.com/search?q={q}"
+	else:
+		url = "https://www.google.com/"
+	return {
+		"title": "Search Google",
+		"subtitle": "↩︎ open in browser",
+		"arg": json.dumps({"type": "search_google", "url": url}),
+		"valid": True,
+		"mods": {
+			"cmd": {
+				"subtitle": "⌘↩︎ copy to clipboard",
+				"arg": json.dumps({
+					"type": "copy",
+					"url": url
+				}),
+				"valid": True
+			}
+		}
+	}
+	
+def item_update_file():
+	return {
+		"title": "Update URL file",
+		"subtitle": "↩︎ open URL file",
+		"arg": json.dumps({"type": "open_file"}),
+		"valid": True
+	}
+	
+def item_for_entry(entry):
+	return {
+		"title": entry["title"],
+		"subtitle": "↩︎ open in browser",
+		"arg": json.dumps({
+			"type": "open_url",
+			"url": entry["url"],
+			"profile": entry.get("profile_id") or "Default",
+			"is_shared": entry.get("is_shared", False)
+		}),
+		"valid": True,
+		"mods": {
+			"cmd": {
+				"subtitle": "⌘↩︎ copy to clipboard",
+				"arg": json.dumps({
+					"type": "copy",
+					"url": entry["url"]
+				}),
+				"valid": True
+			}
+		}
+	}
+	
+def main():
+	query = " ".join(sys.argv[1:]).strip()
+	items = []
+	if not query:
+		items.append(item_search_google(None))
+		items.append(item_update_file())
+	else:
+		entries = load_entries()
+		qlower = query.lower()
+		matches = [e for e in entries if qlower in e["title"].lower()]
+		if matches:
+			items.extend(item_for_entry(e) for e in matches)
+		else:
+			items.append(item_search_google(query))
+	print(json.dumps({"items": items}, ensure_ascii=False))
+	
+if __name__ == "__main__":
+	main()
