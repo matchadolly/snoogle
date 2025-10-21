@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+
+import os, sys, json, subprocess
+
+BUNDLE_ID = "com.matchadolly.Snoogle"
+URLS_FILE_NAME = "urls.txt"
+
+def get_data_dir():
+	data_dir = os.getenv("alfred_workflow_data")
+	if not data_dir:
+		data_dir = os.path.join(os.path.expanduser("~"), ".alfred-workflow-data", BUNDLE_ID)
+	os.makedirs(data_dir, exist_ok=True)
+	return data_dir
+
+def urls_file_path():
+	return os.path.join(get_data_dir(), URLS_FILE_NAME)
+
+DEFAULT_FILE = """---- Instructions ----
+
+Each profile group begins with the headline "Profile ID • Profile display name".
+Separate different profile groups with blank lines.
+
+The profile ID should correspond to the ID of your desired Chrome profile.
+To find the profile ID, follow this guide: https://ujesh.com/find-chrome-profile-number-windows-mac-linux/
+
+URL entires are placed under the headline, with one URL entry per line.
+Entries consist of the title, a colon with a space, and the URL.
+
+URL entries in the "Shared" group will open in the default browser.
+
+---------------------
+
+Shared
+google: https://www.google.com/
+
+Profile 1 • Example
+google: https://www.google.com/
+"""
+
+def ensure_file_exists():
+	p = urls_file_path()
+	if not os.path.exists(p):
+		with open(p, "w", encoding="utf-8") as f:
+			f.write(DEFAULT_FILE)
+	return p
+
+def open_in_chrome(url, profile):
+	subprocess.run([
+		"open", "-na", "Google Chrome",
+		"--args",
+		f"--profile-directory={profile}",
+		url
+	])
+	
+def open_url_default(url):
+	subprocess.run(["open", url])
+	
+def copy_to_clipboard(text):
+	p = subprocess.Popen("pbcopy", env={"LANG":"en_US.UTF-8"}, stdin=subprocess.PIPE)
+	p.communicate(text.encode("utf-8"))
+	
+def main():
+	raw = " ".join(sys.argv[1:]).strip()
+	try:
+		payload = json.loads(raw)
+	except Exception:
+		open_url_default("https://www.google.com/")
+		return
+	
+	t = payload.get("type")
+	if t == "search_google":
+		open_url_default(payload.get("url","https://www.google.com/"))
+	elif t == "open_file":
+		p = ensure_file_exists()
+		subprocess.run(["open", p])
+	elif t == "open_url":
+		url = payload.get("url")
+		profile = payload.get("profile")
+		is_shared = payload.get("is_shared", False)
+		if url:
+			if is_shared or not profile or profile.lower() == "default":
+				open_url_default(url)
+			else:
+				open_in_chrome(url, profile)
+	elif t == "copy":
+		url = payload.get("url","")
+		if url:
+			copy_to_clipboard(url)
+			
+if __name__ == "__main__":
+	main()
