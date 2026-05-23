@@ -4,7 +4,7 @@
 An Alfred workflow: Manages and automatically opens websites in their assigned Chrome profiles.
 
 ## Setup
-1. Download the latest [.alfredworkflow release](https://github.com/matchadolly/Snoogle/releases).
+1. Download the latest [.alfredworkflow release](https://github.com/matchadolly/snoogle/releases).
 2. Double click the downloaded file. It should open directly in Alfred.
 3. Configure the workflow by choosing your own keyword, if you'd like, then click Install.
 4. Run the "Update URL file" action. A file will be created the first time you run this action.
